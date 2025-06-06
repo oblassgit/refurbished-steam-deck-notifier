@@ -17,76 +17,150 @@
 from time import gmtime, strftime
 import requests
 from discord_webhook import DiscordWebhook
-import time
 import os
+import csv
+from datetime import datetime
+import argparse
+import json
 
-# The country we want check for availability
-# List of possibilities here https://github.com/RudeySH/SteamCountries/blob/master/json/countries.json
-# DE, UK, US ...
-country_code = 'DE'
 
-# This is the endpoint to check availability
-url = 'https://api.steampowered.com/IPhysicalGoodsService/CheckInventoryAvailableByPackage/v1?origin=https:%2F%2Fstore.steampowered.com&country_code='+country_code+'&packageid='
+# Default values
+DEFAULT_COUNTRY_CODE = 'DE'
+DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/some_webhook"
 
-# The webhook we'll send updates to
-webhook = DiscordWebhook(url="https://discord.com/api/webhooks/some_webhook", content="error") # NEVER ever upload your webhook to github! Anyone could use it to send spam messages to your discord.
+def initialize_logs(log_file: str):
+    """Initialize CSV log file if it doesn't exist"""
+    if log_file and not os.path.exists(log_file):
+        with open(log_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['unix_timestamp', 'storage_gb', 
+                        'display_type', 'package_id', 'available'])
 
-def superduperscraper (version, urlSuffix, isOLED: bool) :
+def log_availability_data(version, package_id, available, is_oled, log_file: str):
+    """Log availability data in CSV format"""
+    if not log_file:
+        return
+        
+    timestamp = datetime.now()
+    unix_timestamp = int(timestamp.timestamp())
+    display_type = "OLED" if is_oled else "LCD"
+    
+    with open(log_file, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow([unix_timestamp, version, display_type, package_id, available])
 
-    # This part is for pinging roles in a discord server with multiple regions
-    # For personal use you can remove this part
-    roleIdWithCountry = ""
-
-    if(urlSuffix == "903905"): #64gb lcd
-        roleIdWithCountry = "1343233406791716875"
-    elif(urlSuffix == "903906"): #256gb lcd
-        roleIdWithCountry = "1343233552896229508"
-    elif(urlSuffix == "903907"): #512gb lcd
-        roleIdWithCountry = "1343233731795881994"
-    elif(urlSuffix == "1202542"): #512gb oled
-        roleIdWithCountry = "1343233909655343234"
-    elif(urlSuffix == "1202547"): #1tb oled
-        roleIdWithCountry = "1343234052957802670"
-
+def superduperscraper(version, urlSuffix, isOLED: bool, log_file: str, country_code: str, webhook_url: str, role_ids: dict):
+    # Build Steam API URL with country code
+    url = f'https://api.steampowered.com/IPhysicalGoodsService/CheckInventoryAvailableByPackage/v1?origin=https:%2F%2Fstore.steampowered.com&country_code={country_code}&packageid='
+    
+    # Create Discord webhook
+    webhook = DiscordWebhook(url=webhook_url, content="error")
+    
+    roleIdWithCountry = role_ids.get(urlSuffix, "") if role_ids else ""
+    
     oldvalue = ""
-    # previous availability is stored in a file
-    # we get the value before checking here
-    if (os.path.isfile(urlSuffix + "gb.txt")):
-        file_read = open(urlSuffix + "gb.txt", "r")
-        oldvalue = file_read.read()
-        file_read.close()
-    print("ov: "+ oldvalue)
+    # Get previous availability from file
+    if os.path.isfile(f"{urlSuffix}_{country_code}.txt"):
+        with open(f"{urlSuffix}_{country_code}.txt", "r") as file_read:
+            oldvalue = file_read.read()
+    
+    print("Previous value: " + oldvalue)
 
-    # make the request to steam to see if the steam deck is available
-    response = requests.get(url+urlSuffix)
-    # True / False depending on if it's available or not
-    availability = str(response.json()["response"]["inventory_available"])
-    print(strftime("%Y-%m-%d %H:%M:%S", gmtime()) + " >> "+version+"GB Result: " + availability + " | raw: " + str(response.text))
-    # save the new availability to the same file as above
-    file = open(urlSuffix + "gb.txt", "w")
-    file.write(availability)
-    file.close()
-    # if the new availability is different form the old one
-    if oldvalue != availability and oldvalue != None :
-        # and if it's available send a positive message to discord
-        if availability == "True" :
-            if isOLED:
-                webhook.content = "refurbished "+version+"GB OLED steam deck available <@&" + roleIdWithCountry + ">" # If you removed the roles at the top you need to remove this <@&" + roleIdWithCountry + ">" as well
+    try:
+        # Make request to Steam API
+        response = requests.get(url+urlSuffix, timeout=10)
+        response.raise_for_status()
+        
+        # Get availability status
+        availability = str(response.json()["response"]["inventory_available"])
+        current_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+        
+        print(f"{current_time} >> {version}GB {'OLED' if isOLED else 'LCD'} Result: {availability}")
+        
+        # Save new availability to file
+        with open(f"{urlSuffix}_{country_code}.txt", "w") as file:
+            file.write(availability)
+        
+        # Check if status changed
+        status_changed = oldvalue != availability and oldvalue != ""
+        
+        # Log data
+        log_availability_data(version, urlSuffix, availability == "True", isOLED, log_file)
+        
+        # Send Discord notification only on status change
+        if status_changed:
+            display_type = "OLED" if isOLED else "LCD"
+            if availability == "True":
+                # Include role ping only if role ID exists
+                role_ping = f" <@&{roleIdWithCountry}>" if roleIdWithCountry else ""
+                webhook.content = f"refurbished {version}GB {display_type} steam deck available{role_ping}"
             else:
-                webhook.content = "refurbished "+version+"GB LCD steam deck available <@&" + roleIdWithCountry + ">"
+                webhook.content = f"refurbished {version}GB {display_type} steam deck not available"
             webhook.execute()
-        # if not send a negative message
-        else:
-            if isOLED:
-                webhook.content = "refurbished "+version+"GB OLED steam deck not available"
-            else:
-                webhook.content = "refurbished "+version+"GB LCD steam deck not available"
-            webhook.execute()
+            
+    except requests.RequestException as e:
+        print(f"Error fetching data for {version}GB: {e}")
+        log_availability_data(version, urlSuffix, False, isOLED, log_file)
+    except Exception as e:
+        print(f"Unexpected error for {version}GB: {e}")
 
-# The numbers are the individual ids for the refurbished steam deck
-# You can see these on steamdb
-superduperscraper("64", "903905", False) # 64gb lcd
-superduperscraper("256", "903906", False) # 256gb lcd
-superduperscraper("512", "903907", False) # 512gb lcd
-superduperscraper("512", "1202542", True) # 512gb oled
-superduperscraper("1024", "1202547", True) # 1tb oled
+def load_role_mapping(role_file: str) -> dict:
+    """Load role mapping from JSON file"""
+    if not role_file or not os.path.exists(role_file):
+        return {}
+    
+    try:
+        with open(role_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Warning: Could not load role mapping from {role_file}: {e}")
+        return {}
+
+def main():
+    """Main function to check all Steam Deck models"""
+    parser = argparse.ArgumentParser(description='Check Steam Deck availability and optionally log to CSV')
+    parser.add_argument('--csv-log', help='Path to CSV file for logging availability data')
+    parser.add_argument('--country-code', default=DEFAULT_COUNTRY_CODE, 
+                       help=f'Country code for Steam API (default: {DEFAULT_COUNTRY_CODE})')
+    parser.add_argument('--webhook-url', default=DEFAULT_WEBHOOK_URL,
+                       help='Discord webhook URL for notifications')
+    parser.add_argument('--role-mapping', help='JSON file containing package_id to role_id mapping')
+    
+    args = parser.parse_args()
+    
+    log_file = args.csv_log if args.csv_log else ""
+    initialize_logs(log_file)
+    
+    # Load role mapping
+    role_ids = load_role_mapping(args.role_mapping)
+    
+    if log_file:
+        print(f"Logging enabled to: {log_file}")
+    else:
+        print("Logging disabled")
+    
+    print(f"Country code: {args.country_code}")
+    print(f"Webhook URL: {args.webhook_url}")
+    
+    # Steam Deck models
+    models = [
+        ("64", "903905", False),    # 64gb lcd
+        ("256", "903906", False),   # 256gb lcd  
+        ("512", "903907", False),   # 512gb lcd
+        ("512", "1202542", True),   # 512gb oled
+        ("1024", "1202547", True),  # 1tb oled
+    ]   
+
+    if role_ids:
+        print(f"Role mapping loaded: {len(role_ids)} entries")
+        if not len(role_ids) == len(models):
+            print("Warning..............Role mapping doesn't match models. Pinging roles won't work as expected.")
+    else:
+        print("No role mapping - notifications will not ping roles")
+    
+    for version, package_id, is_oled in models:
+        superduperscraper(version, package_id, is_oled, log_file, 
+                         args.country_code, args.webhook_url, role_ids)
+
+if __name__ == "__main__":
+    main()
