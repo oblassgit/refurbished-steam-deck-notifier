@@ -144,7 +144,8 @@ Add this line to check every 3 minutes:
 This project uses the excellent [**python-discord-webhook**](https://github.com/lovvskillz/python-discord-webhook) library by [lovvskillz](https://github.com/lovvskillz)
 Licensed under the MIT License.
 
-Data sourced from store.steampowered.com via the public Steam Store API. Steam and Steam Deck are trademarks of Valve Corporation.
+It also makes use of Valve’s public Steam Store API — specifically the  
+[`CheckInventoryAvailableByPackage`](https://api.steampowered.com/IPhysicalGoodsService/CheckInventoryAvailableByPackage/v1?origin=https:%2F%2Fstore.steampowered.com) endpoint. Data and trademarks belong to [Valve Corporation](https://www.valvesoftware.com/), owners of Steam and Steam Deck.
 
 Big thanks to all contributors and maintainers of the open-source packages used in this project.
 
