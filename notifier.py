@@ -28,19 +28,37 @@ import json
 DEFAULT_COUNTRY_CODE = 'DE'
 DEFAULT_WEBHOOK_URL = "https://discord.com/api/webhooks/some_webhook"
 
-def initialize_logs(log_file: str):
+def get_daily_csv_path(csv_dir: str, country_code: str) -> str:
+    """Generate the CSV file path for today's date and country"""
+    if not csv_dir:
+        return ""
+    
+    # Create directory if it doesn't exist
+    os.makedirs(csv_dir, exist_ok=True)
+    
+    # Generate filename with today's date and country code
+    today = datetime.now().strftime("%Y-%m-%d")
+    filename = f"{country_code}_{today}.csv"
+    return os.path.join(csv_dir, filename)
+
+def initialize_logs(csv_dir: str, country_code: str):
     """Initialize CSV log file if it doesn't exist"""
-    if log_file and not os.path.exists(log_file):
+    if not csv_dir:
+        return
+        
+    log_file = get_daily_csv_path(csv_dir, country_code)
+    if not os.path.exists(log_file):
         with open(log_file, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['unix_timestamp', 'storage_gb', 
                         'display_type', 'package_id', 'available'])
 
-def log_availability_data(version, package_id, available, is_oled, log_file: str):
+def log_availability_data(version, package_id, available, is_oled, csv_dir: str, country_code: str):
     """Log availability data in CSV format"""
-    if not log_file:
+    if not csv_dir:
         return
         
+    log_file = get_daily_csv_path(csv_dir, country_code)
     timestamp = datetime.now()
     unix_timestamp = int(timestamp.timestamp())
     display_type = "OLED" if is_oled else "LCD"
@@ -49,7 +67,7 @@ def log_availability_data(version, package_id, available, is_oled, log_file: str
         writer = csv.writer(f)
         writer.writerow([unix_timestamp, version, display_type, package_id, available])
 
-def superduperscraper(version, urlSuffix, isOLED: bool, log_file: str, country_code: str, webhook_url: str, role_ids: dict):
+def superduperscraper(version, urlSuffix, isOLED: bool, csv_dir: str, country_code: str, webhook_url: str, role_ids: dict):
     # Build Steam API URL with country code
     url = f'https://api.steampowered.com/IPhysicalGoodsService/CheckInventoryAvailableByPackage/v1?origin=https:%2F%2Fstore.steampowered.com&country_code={country_code}&packageid='
     
@@ -85,7 +103,7 @@ def superduperscraper(version, urlSuffix, isOLED: bool, log_file: str, country_c
         status_changed = oldvalue != availability and oldvalue != ""
         
         # Log data
-        log_availability_data(version, urlSuffix, availability == "True", isOLED, log_file)
+        log_availability_data(version, urlSuffix, availability == "True", isOLED, csv_dir, country_code)
         
         # Send Discord notification only on status change
         if status_changed:
@@ -100,7 +118,7 @@ def superduperscraper(version, urlSuffix, isOLED: bool, log_file: str, country_c
             
     except requests.RequestException as e:
         print(f"Error fetching data for {version}GB: {e}")
-        log_availability_data(version, urlSuffix, False, isOLED, log_file)
+        log_availability_data(version, urlSuffix, False, isOLED, csv_dir, country_code)
     except Exception as e:
         print(f"Unexpected error for {version}GB: {e}")
 
@@ -119,23 +137,28 @@ def load_role_mapping(role_file: str) -> dict:
 def main():
     """Main function to check all Steam Deck models"""
     parser = argparse.ArgumentParser(description='Check Steam Deck availability and optionally log to CSV')
-    parser.add_argument('--csv-log', help='Path to CSV file for logging availability data')
+    parser.add_argument('--csv-dir', help='Directory path for daily CSV log files')
     parser.add_argument('--country-code', default=DEFAULT_COUNTRY_CODE, 
                        help=f'Country code for Steam API (default: {DEFAULT_COUNTRY_CODE})')
     parser.add_argument('--webhook-url', default=DEFAULT_WEBHOOK_URL,
                        help='Discord webhook URL for notifications')
     parser.add_argument('--role-mapping', help='JSON file containing package_id to role_id mapping')
+    parser.add_argument('--csv-log', help='Deprecated: This option is no longer supported (last supported version v2.0.0).')
     
     args = parser.parse_args()
+
+    if args.csv_log:
+        print("w: Deprecated: This option is no longer supported (last supported version v2.0.0).")
     
-    log_file = args.csv_log if args.csv_log else ""
-    initialize_logs(log_file)
+    csv_dir = args.csv_dir if args.csv_dir else ""
+    initialize_logs(csv_dir, args.country_code)
     
     # Load role mapping
     role_ids = load_role_mapping(args.role_mapping)
     
-    if log_file:
-        print(f"Logging enabled to: {log_file}")
+    if csv_dir:
+        today_file = get_daily_csv_path(csv_dir, args.country_code)
+        print(f"Logging enabled to: {today_file}")
     else:
         print("Logging disabled")
     
@@ -159,7 +182,7 @@ def main():
         print("No role mapping - notifications will not ping roles")
     
     for version, package_id, is_oled in models:
-        superduperscraper(version, package_id, is_oled, log_file, 
+        superduperscraper(version, package_id, is_oled, csv_dir, 
                          args.country_code, args.webhook_url, role_ids)
 
 if __name__ == "__main__":
