@@ -59,7 +59,7 @@ python steam_deck_checker.py --webhook-url "https://discord.com/api/webhooks/YOU
 * `--webhook-url`: Discord webhook URL for notifications (**required**)
 * `--country-code`: Country code for Steam API (default: `DE`, **important**)
 * `--role-mapping`: JSON file containing Discord role mappings (optional)
-* `--csv-log`: Path to CSV file for logging availability data (optional)
+* `--csv-dir`: Directory path for daily CSV log files (optional)
 
 ### Full Example
 
@@ -111,7 +111,7 @@ The script checks availability for these models:
 
 ## 📊 CSV Logging
 
-When using `--csv-log`, the script logs to a CSV file with these fields:
+When using `--csv-dir`, the script writes one CSV file for each day to the specified directory, with these fields:
 
 * `unix_timestamp`: Time of check
 * `storage_gb`: 64, 256, 512, or 1024
