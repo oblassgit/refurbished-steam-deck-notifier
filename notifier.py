@@ -175,7 +175,7 @@ def main():
     print(f"Webhook URL: {args.webhook_url}")
     
     # Steam Deck models
-    models = [
+    refurbModels = [
         #REFURBISHED
         SteamDeckModel("64", "903905", False),    # 64gb lcd
         SteamDeckModel("256", "903906", False),   # 256gb lcd  
@@ -184,7 +184,7 @@ def main():
         SteamDeckModel("1024", "1202547", True),  # 1tb oled
     ]   
 
-    refurbModels = [
+    newModels = [
         #NEW
         SteamDeckModel("512", "946113", True, is_new=True),    # 512gb oled
         SteamDeckModel("1024", "946114", True, is_new=True),   # 1tb oled
@@ -197,7 +197,9 @@ def main():
     ]
 
     if args.include_new_models:
-        models = models + refurbModels
+        models = refurbModels + newModels
+    else:
+        models = refurbModels
 
     if role_ids:
         print(f"Role mapping loaded: {len(role_ids)} entries")
