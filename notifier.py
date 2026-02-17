@@ -74,12 +74,15 @@ def log_availability_data(version, package_id, available, is_oled, csv_dir: str,
         writer = csv.writer(f)
         writer.writerow([unix_timestamp, version, display_type, package_id, available])
 
-def superduperscraper(model: SteamDeckModel, csv_dir: str, country_code: str, webhook_url: str, role_ids: dict):
+def superduperscraper(model: SteamDeckModel, csv_dir: str, country_code: str, webhook_url: str, webhook_url_new: str, role_ids: dict):
     # Build Steam API URL with country code
     url = f'https://api.steampowered.com/IPhysicalGoodsService/CheckInventoryAvailableByPackage/v1?origin=https:%2F%2Fstore.steampowered.com&country_code={country_code}&packageid='
     
+    # Determine which webhook URL to use based on model type
+    active_webhook_url = webhook_url_new if (model.is_new and webhook_url_new) else webhook_url
+    
     # Create Discord webhook
-    webhook = DiscordWebhook(url=webhook_url, content="error")
+    webhook = DiscordWebhook(url=active_webhook_url, content="error")
     
     roleIdWithCountry = role_ids.get(model.package_id, "") if role_ids else ""
     
@@ -151,6 +154,7 @@ def main():
                        help=f'Country code for Steam API (default: {DEFAULT_COUNTRY_CODE})')
     parser.add_argument('--webhook-url', default=DEFAULT_WEBHOOK_URL,
                        help='Discord webhook URL for notifications')
+    parser.add_argument('--webhook-url-new', help='Discord webhook URL for seperate new model notifications (optional, defaults to --webhook-url)')
     parser.add_argument('--role-mapping', help='JSON file containing package_id to role_id mapping')
     parser.add_argument('--csv-log', help='Deprecated: This option is no longer supported (last supported version v2.0.0).')
     
@@ -210,7 +214,7 @@ def main():
     
     for model in models:
         superduperscraper(model, csv_dir, 
-                         args.country_code, args.webhook_url, role_ids)
+                         args.country_code, args.webhook_url, args.webhook_url_new, role_ids)
 
 if __name__ == "__main__":
     main()
